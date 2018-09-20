@@ -6,11 +6,12 @@ import re
 from nltk.stem.snowball import SnowballStemmer as SS
 from nltk.translate.gale_church import align_blocks,align_texts
 from nltk.translate.ibm3 import IBMModel3
+from nltk.translate.ibm2 import IBMModel2
 from nltk.translate.ibm1 import IBMModel1
 from nltk.translate.api import AlignedSent
 
-word_separator = re.compile('[ \n\'".,/:;!?()]+')
-sentence_separator = re.compile('[".!?()]+')
+word_separator = re.compile('[\s\n\'“"–.,/:;!?()]+')
+sentence_separator = re.compile('[“".!?()]+')
 block_separator = re.compile('\n\n\n\n')
 
 def help_exit():
@@ -49,6 +50,26 @@ def chunk_list(seq, num):
 
     return out
 
+class Translation:
+    def __init__(self, f, t):
+        self.f = f
+        self.t = t
+    def __repr__(self):
+        return '{} = {}'.format(self.f, self.t)
+
+def select_good_translations(model):
+    res = []
+    for from_w in model.translation_table.keys():
+        for to_w in model.translation_table[from_w].keys():
+            if model.translation_table[from_w][to_w] > 0.9:
+                res.append(Translation(from_w, to_w))
+
+    f_count = Counter([t.f for t in res])
+    t_count = Counter([t.t for t in res])
+    
+    return [t for t in res if f_count[t.f] == 1 and t_count[t.t] == 1]
+
+
 def gradlate(ft, tt, out):
     if len(ft.blocks) != len(tt.blocks):
         raise Exception('different amount of blocks in texts')
@@ -75,13 +96,9 @@ def gradlate(ft, tt, out):
 #   for p in bitex:
 #       print(p)
 
-    ibm = IBMModel1(bitex, 5)
-
-    for from_w in ibm.translation_table.keys():
-        for to_w in ibm.translation_table[from_w].keys():
-            p = ibm.translation_table[from_w][to_w]
-            if p > 0.5:
-                print('{} = {} ({})'.format(from_w, to_w, p))
+    ibm = IBMModel2(bitex, 5)
+    for t in select_good_translations(ibm):
+        print(t)
 
 if __name__ == '__main__':
     try:
