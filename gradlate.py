@@ -42,8 +42,8 @@ def chunk_list(seq, num):
     return out
 
 def gradlate(ft, tt, out):
-    print('{}\n{}\n'.format([len(b.sentences) for b in ft.blocks], [len(b.sentences) for b in tt.blocks]))
-#        print('{} {}'.format(len(s), s))
+    if len(ft.blocks) != len(tt.blocks):
+        raise Exception('different amount of blocks in texts')
 
     print(align_blocks(ft.blocks[2].sentence_lengths, tt.blocks[2].sentence_lengths))
 
