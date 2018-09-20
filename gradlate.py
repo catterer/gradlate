@@ -4,10 +4,11 @@ import getopt
 from collections import Counter as Counter
 import re
 from nltk.stem.snowball import SnowballStemmer as SS
-from nltk.translate.gale_church import align_blocks
+from nltk.translate.gale_church import align_blocks,align_texts
 
 word_separator = re.compile('[ \n\'".,/:;!?()]+')
 sentence_separator = re.compile('[".!?()]+')
+block_separator = re.compile('\n\n\n\n')
 empty_sentence = re.compile('^\s*$')
 
 def help_exit():
@@ -16,13 +17,18 @@ def help_exit():
 
 def normalize(w): return w.lower()
 
+class Block:
+    def __init__(self, block_raw):
+        self.raw = block_raw
+        self.sentences = [s for s in sentence_separator.split(self.raw) if not empty_sentence.match(s)]
+        self.sentence_lengths = [len(s) for s in self.sentences]
+        self.words = word_separator.split(self.raw)
+
 class Text:
     def __init__(self, filename):
         with open(filename, 'r') as f:
             self.raw_text = f.read()
-        self.sentences = [s for s in sentence_separator.split(self.raw_text) if not empty_sentence.match(s)]
-        self.words = word_separator.split(self.raw_text)
-        self.sentence_lengths = [len(s) for s in self.sentences]
+        self.blocks = [Block(b) for b in block_separator.split(self.raw_text)]
 
 def chunk_list(seq, num):
     avg = len(seq) / float(num)
@@ -36,13 +42,10 @@ def chunk_list(seq, num):
     return out
 
 def gradlate(ft, tt, out):
-    print('{} {}'.format(len(ft.sentence_lengths), len(tt.sentence_lengths)))
+    print('{}\n{}\n'.format([len(b.sentences) for b in ft.blocks], [len(b.sentences) for b in tt.blocks]))
 #        print('{} {}'.format(len(s), s))
 
-    parts = 100
-    ft1 = chunk_list(ft.sentence_lengths, parts)[0]
-    tt1 = chunk_list(tt.sentence_lengths, parts)[0]
-    print(align_blocks(ft1, tt1))
+    print(align_blocks(ft.blocks[2].sentence_lengths, tt.blocks[2].sentence_lengths))
 
 if __name__ == '__main__':
     try:
