@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import sys
+import pickle
 import getopt
 from collections import Counter as Counter
 import re
@@ -50,7 +51,7 @@ def chunk_list(seq, num):
 
     return out
 
-class Translation:
+class WordXn:
     def __init__(self, f, t):
         self.f = f
         self.t = t
@@ -62,7 +63,7 @@ def select_good_translations(model):
     for from_w in model.translation_table.keys():
         for to_w in model.translation_table[from_w].keys():
             if model.translation_table[from_w][to_w] > 0.9:
-                res.append(Translation(from_w, to_w))
+                res.append(WordXn(from_w, to_w))
 
     f_count = Counter([t.f for t in res])
     t_count = Counter([t.t for t in res])
@@ -70,39 +71,52 @@ def select_good_translations(model):
     return [t for t in res if f_count[t.f] == 1 and t_count[t.t] == 1]
 
 
-def gradlate(ft, tt, out):
-    if len(ft.blocks) != len(tt.blocks):
-        raise Exception('different amount of blocks in texts')
+class TextXn:
+    def __init__(self, text_f, text_t):
+        if len(text_f.blocks) != len(text_t.blocks):
+            raise Exception('different amount of blocks in texts')
 
-    block_n = 2
-    fb = ft.blocks[block_n]
-    tb = tt.blocks[block_n]
+        self.text_f = text_f
+        self.text_t = text_t
+        self.aligned_blocks = {}
+        self.model = None
+        self.bitex = []
 
-    pairs = align_blocks(fb.stnc_lengths_char, tb.stnc_lengths_char)
-#   pairs = aligned_pairs[round(len(aligned_pairs)/2) + 1]
-#   print(fb.sentences[pairs[0]])
-#   print(tb.sentences[pairs[1]])
+    def blocks_number(self):
+        return len(self.text_f.blocks)
 
-    flast = None
-    tlast = None
+    def align_block(self, block_n):
+        fb = self.text_f.blocks[block_n]
+        tb = self.text_t.blocks[block_n]
+        self.aligned_blocks[block_n] = align_blocks(fb.stnc_lengths_char, tb.stnc_lengths_char)
 
-    bitex = []
-    for p in pairs:
-        if p[0] == flast or p[1] == tlast:
-            continue
-        (flast,tlast) = (p[0], p[1])
-        bitex.append(AlignedSent(fb.sentences[p[0]].words, tb.sentences[p[1]].words))
+    def build_bitex(self):
+        self.bitex = []
+        for b_id in self.aligned_blocks.keys():
+            flast = None
+            tlast = None
 
-#   for p in bitex:
-#       print(p)
+            for p in self.aligned_blocks[b_id]:
+                if p[0] == flast or p[1] == tlast:
+                    continue
+                (flast,tlast) = (p[0], p[1])
+                fb = self.text_f.blocks[b_id]
+                tb = self.text_t.blocks[b_id]
+                self.bitex.append(AlignedSent(fb.sentences[p[0]].words, tb.sentences[p[1]].words))
 
-    ibm = IBMModel2(bitex, 5)
-    for t in select_good_translations(ibm):
-        print(t)
+    def train_model(self):
+        self.model = IBMModel2(self.bitex, 5)
+        for t in select_good_translations(self.model):
+            print(t)
+
+    def dump(self, fname):
+        with open(fname, 'wb') as fd:
+            pickle.dump(self, fd)
+
 
 if __name__ == '__main__':
     try:
-        opts, _ = getopt.getopt(sys.argv[1:],'hf:t:o:',['from=','to=','out='])
+        opts, _ = getopt.getopt(sys.argv[1:],'hf:t:o:x:',['from=','to=','out=','xn='])
     except getopt.GetoptError:
         help_exit()
 
@@ -111,23 +125,33 @@ if __name__ == '__main__':
     to_path = None
     to_lang = None
     out_path = None
+    xn_path = None
 
     for k,v in opts:
         if k == '-h': help_exit()
         if k == '-f': (from_lang, from_path) = v.split(':')
         if k == '-t': (to_lang, to_path) = v.split(':')
         if k == '-o': out_path = v
+        if k == '-x': xn_path = v
 
-    if not all([from_path, to_path]):
+    if not xn_path and not all([from_path, to_path]):
         help_exit()
 
-    from_text = Text(from_lang, from_path)
-    to_text = Text(to_lang, to_path)
+    if xn_path:
+        with open(xn_path, 'rb') as xn_file:
+            xn = pickle.load(xn_file)
+    else:
+        from_text = Text(from_lang, from_path)
+        to_text = Text(to_lang, to_path)
+        xn = TextXn(from_text, to_text)
 
-    out_file = sys.stdout
-    if out_path:
-        out_file = open(out_path, 'w')
+#       for i in range(0, xn.blocks_number()):
+#           xn.align_block(i)
+#           xn.dump('.trash/aligned.{}'.format(i))
 
-    gradlate(from_text, to_text, out_file)
-    out_file.close()
+    xn.build_bitex()
+    xn.dump('.trash/bitex')
+
+    xn.train_model()
+    xn.dump('.trash/model')
 
