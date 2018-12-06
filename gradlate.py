@@ -9,6 +9,7 @@ import nltk.data
 
 block_separator = re.compile('\n\n\n\n')
 stnc_tokenizer = nltk.data.load('tokenizers/punkt/english.pickle')
+chapter_re = re.compile('(.*)\n\n(.*)', re.DOTALL)
 
 def help_exit():
     print('test.py -f <from_translation> -t <to_translation> -o <outputfile>')
@@ -20,13 +21,20 @@ class SentSep:
 
 
 class Sentence:
-    def __init__(self, stc_raw):
+    def __init__(self, stc_raw, header=False):
+        self.header = header
         self.raw = stc_raw.replace('\n', ' ').replace('\r', '')
 
 class Block:
     def __init__(self, block_raw):
         self.raw = block_raw
-        self.sentences = [Sentence(s) for s in stnc_tokenizer.tokenize(self.raw)]
+        self.sentences = []
+        for s in stnc_tokenizer.tokenize(self.raw):
+            m = chapter_re.match(s)
+            if m:
+                self.sentences += [Sentence(m.group(1), header=True), Sentence(m.group(2))]
+            else:
+                self.sentences.append(Sentence(s))
         self.stnc_lengths_char = [len(s.raw) for s in self.sentences]
 
 class Text:
