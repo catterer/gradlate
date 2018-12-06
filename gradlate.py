@@ -6,6 +6,7 @@ import re
 from nltk.translate.gale_church import align_blocks,align_texts
 from nltk.translate.api import AlignedSent
 import nltk.data
+from docx import Document
 
 block_separator = re.compile('\n\n\n\n')
 stnc_tokenizer = nltk.data.load('tokenizers/punkt/english.pickle')
@@ -100,8 +101,13 @@ class TextXn:
             pickle.dump(self, fd)
 
     def form_bilingual_text(self, fname):
-        for (f, t) in self.bitex[:10]:
-            self.logger('{}\n{}\n\n'.format(f.raw,t.raw))
+        d = Document()
+        table = d.add_table(rows = 0, cols = 2)
+        for (f, t) in self.bitex:
+            cells = table.add_row().cells
+            cells[0].text = f.raw
+            cells[1].text = t.raw
+        d.save(fname)
 
 
 if __name__ == '__main__':
