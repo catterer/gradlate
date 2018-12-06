@@ -2,30 +2,31 @@
 import sys
 import pickle
 import getopt
-from collections import Counter as Counter
 import re
 from nltk.translate.gale_church import align_blocks,align_texts
 from nltk.translate.api import AlignedSent
+import nltk.data
 
-word_separator = re.compile('[\s\n\'“"–.,/:;!?()]+')
-sentence_separator = re.compile('[“".!?()]+')
 block_separator = re.compile('\n\n\n\n')
+stnc_tokenizer = nltk.data.load('tokenizers/punkt/english.pickle')
 
 def help_exit():
     print('test.py -f <from_translation> -t <to_translation> -o <outputfile>')
     sys.exit(2)
 
-def normalize(w): return w.lower()
+class SentSep:
+    def split(s):
+        tokens = [tok for tok in sentence_separator.split() if tok != '']
+
 
 class Sentence:
     def __init__(self, stc_raw):
-        self.raw = stc_raw
-        self.words = word_separator.split(self.raw)
+        self.raw = stc_raw.replace('\n', ' ').replace('\r', '')
 
 class Block:
     def __init__(self, block_raw):
         self.raw = block_raw
-        self.sentences = [Sentence(s) for s in sentence_separator.split(self.raw)]
+        self.sentences = [Sentence(s) for s in stnc_tokenizer.tokenize(self.raw)]
         self.stnc_lengths_char = [len(s.raw) for s in self.sentences]
 
 class Text:
@@ -71,20 +72,28 @@ class TextXn:
 
         self.bitex = []
         for b_id in self.aligned_blocks.keys():
-            flast = None
-            tlast = None
+            fid_last = None
+            tid_last = None
 
-            for p in self.aligned_blocks[b_id]:
-                if p[0] == flast or p[1] == tlast:
-                    continue
-                (flast,tlast) = (p[0], p[1])
-                fb = self.text_f.blocks[b_id]
-                tb = self.text_t.blocks[b_id]
-                self.bitex.append(AlignedSent(fb.sentences[p[0]].words, tb.sentences[p[1]].words))
+            for (fid, tid) in self.aligned_blocks[b_id]:
+                assert ((fid, tid) != (fid_last, tid_last))
+                fsn = self.text_f.blocks[b_id].sentences[fid]
+                tsn = self.text_t.blocks[b_id].sentences[tid]
+                if fid != fid_last and tid != tid_last:
+                    self.bitex.append((fsn, tsn))
+                elif fid == fid_last:
+                    self.bitex[-1][1].raw += tsn.raw
+                else:
+                    self.bitex[-1][0].raw += fsn.raw
+                (fid_last,tid_last) = (fid, tid)
 
     def dump(self, fname):
         with open(fname, 'wb') as fd:
             pickle.dump(self, fd)
+
+    def form_bilingual_text(self, fname):
+        for (f, t) in self.bitex[:10]:
+            self.logger('{}\n{}\n\n'.format(f.raw,t.raw))
 
 
 if __name__ == '__main__':
