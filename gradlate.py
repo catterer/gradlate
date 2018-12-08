@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+#coding: utf8
 import sys
 import pickle
 import getopt
@@ -11,6 +12,7 @@ from docx import Document
 block_separator = re.compile('\n\n\n\n')
 stnc_tokenizer = nltk.data.load('tokenizers/punkt/english.pickle')
 chapter_re = re.compile('(.*)\n\n(.*)', re.DOTALL)
+part_re = re.compile('^PART *[A-Z]* *$')
 
 def help_exit():
     print('test.py -f <from_translation> -t <to_translation> -o <outputfile>')
@@ -22,8 +24,8 @@ class SentSep:
 
 
 class Sentence:
-    def __init__(self, stc_raw, header=False):
-        self.header = header
+    def __init__(self, stc_raw, is_header=0):
+        self.is_header = is_header
         self.raw = stc_raw.replace('\n', ' ').replace('\r', '')
 
 class Block:
@@ -31,9 +33,12 @@ class Block:
         self.raw = block_raw
         self.sentences = []
         for s in stnc_tokenizer.tokenize(self.raw):
+            if part_re.match(s):
+                self.sentences.append(Sentence(s, is_header=1))
+                continue
             m = chapter_re.match(s)
             if m:
-                self.sentences += [Sentence(m.group(1), header=True), Sentence(m.group(2))]
+                self.sentences += [Sentence(m.group(1), is_header=2), Sentence(m.group(2))]
             else:
                 self.sentences.append(Sentence(s))
         self.stnc_lengths_char = [len(s.raw) for s in self.sentences]
@@ -100,7 +105,7 @@ class TextXn:
         with open(fname, 'wb') as fd:
             pickle.dump(self, fd)
 
-    def form_bilingual_text(self, fname):
+    def form_bilingual_table(self, fname):
         d = Document()
         table = d.add_table(rows = 0, cols = 2)
         for (f, t) in self.bitex:
@@ -108,6 +113,26 @@ class TextXn:
             cells[0].text = f.raw
             cells[1].text = t.raw
         d.save(fname)
+
+    def form_bilingual_doc(self, fname):
+        d = Document()
+        for (f, t) in self.bitex:
+            if f.is_header:
+                d.add_heading(f.raw, f.is_header)
+                continue;
+            d.add_paragraph(f.raw, style='Quote')
+            d.add_paragraph(t.raw)
+        d.save(fname)
+
+    def form_bilingual_text(self, fname):
+        for (f, t) in self.bitex:
+            if f.is_header:
+                print('{} {}'.format(f.is_header, f.raw))
+                continue;
+            print('{}'.format(f.raw))
+            print('{}'.format(t.raw))
+
+
 
 
 if __name__ == '__main__':
@@ -141,5 +166,5 @@ if __name__ == '__main__':
         xn.build_bitex()
         xn.dump('.model')
 
-    xn.form_bilingual_text(out_path)
+    xn.form_bilingual_doc(out_path)
 
