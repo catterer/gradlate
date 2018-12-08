@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 #coding: utf8
 import sys
+import os
 import pickle
 import getopt
 import re
@@ -9,10 +10,11 @@ from nltk.translate.api import AlignedSent
 import nltk.data
 from docx import Document
 
-block_separator = re.compile('\n\n\n\n')
+block_separator = re.compile('\n\n\n\n[\n\r]*')
 stnc_tokenizer = nltk.data.load('tokenizers/punkt/english.pickle')
-chapter_re = re.compile('(.*)\n\n(.*)', re.DOTALL)
-part_re = re.compile('^PART *[A-Z]* *$')
+chapter_re = re.compile('[\r\n]*(CHAPTER *[A-Z]*) *$', re.DOTALL)
+part_re = re.compile('[\r\n]*(PART *[A-Z]*) *$')
+min_parag_len = 10
 
 def help_exit():
     print('test.py -f <from_translation> -t <to_translation> -o <outputfile>')
@@ -27,27 +29,43 @@ class Sentence:
     def __init__(self, stc_raw, is_header=0):
         self.is_header = is_header
         self.raw = stc_raw.replace('\n', ' ').replace('\r', '')
+    def __repr__(self):
+        if self.is_header:
+            return '<{}>{}</>'.format(self.is_header, self.raw)
+        return self.raw
 
 class Block:
-    def __init__(self, block_raw):
+    def __init__(self, block_raw, debug=None):
         self.raw = block_raw
         self.sentences = []
         for s in stnc_tokenizer.tokenize(self.raw):
-            if part_re.match(s):
-                self.sentences.append(Sentence(s, is_header=1))
-                continue
-            m = chapter_re.match(s)
+            new_sents = []
+            m = part_re.match(s)
             if m:
-                self.sentences += [Sentence(m.group(1), is_header=2), Sentence(m.group(2))]
+                new_sents = [Sentence(m.group(1), is_header=1)]
             else:
-                self.sentences.append(Sentence(s))
+                m = chapter_re.match(s)
+                if m:
+                    new_sents = [Sentence(m.group(1), is_header=2)]
+                else:
+                    new_sents = [Sentence(s)]
+
+            self.sentences += new_sents
+            if debug:
+                debug('"{}"\n=>{}\n'.format(s, new_sents))
+
         self.stnc_lengths_char = [len(s.raw) for s in self.sentences]
 
 class Text:
-    def __init__(self, filename, separ = block_separator):
+    def __init__(self, filename, separ = block_separator, debug_output=None):
         with open(filename, 'r') as f:
             self.raw = f.read()
-        self.blocks = [Block(b) for b in separ.split(self.raw)]
+        debug = None
+        if debug_output:
+            with open(debug_output, 'w') as fd:
+                self.blocks = [Block(b, debug=fd.write) for b in separ.split(self.raw)]
+        else:
+            self.blocks = [Block(b) for b in separ.split(self.raw)]
 
 def chunk_list(seq, num):
     avg = len(seq) / float(num)
@@ -116,23 +134,43 @@ class TextXn:
 
     def form_bilingual_doc(self, fname):
         d = Document()
+        f_accum = ''
+        t_accum = ''
+
+        def flush():
+            nonlocal f_accum
+            nonlocal t_accum
+            d.add_paragraph(f_accum, style='Quote')
+            d.add_paragraph(t_accum)
+            f_accum = ''
+            t_accum = ''
+
         for (f, t) in self.bitex:
             if f.is_header:
+                flush()
                 d.add_heading(f.raw, f.is_header)
                 continue;
-            d.add_paragraph(f.raw, style='Quote')
-            d.add_paragraph(t.raw)
+            f_accum = '{} {}'.format(f_accum, f.raw)
+            t_accum = '{} {}'.format(t_accum, t.raw)
+            if len(f_accum) > min_parag_len and len(t_accum) > min_parag_len:
+                flush()
+        flush()
         d.save(fname)
 
     def form_bilingual_text(self, fname):
-        for (f, t) in self.bitex:
-            if f.is_header:
-                print('{} {}'.format(f.is_header, f.raw))
-                continue;
-            print('{}'.format(f.raw))
-            print('{}'.format(t.raw))
+        with open(fname, 'w') as fd:
+            for (f, t) in self.bitex:
+                if f.is_header:
+                    fd.write('{} {}\n'.format(f.is_header, f.raw))
+                    continue;
+                fd.write('{}\n'.format(f.raw))
+                fd.write('  {}\n'.format(t.raw))
 
 
+def build_debug(d):
+    l = os.listdir(d)
+    for f in l:
+        Text(os.path.join(d, f), debug_output='./dbg_{}'.format(f))
 
 
 if __name__ == '__main__':
@@ -167,4 +205,6 @@ if __name__ == '__main__':
         xn.dump('.model')
 
     xn.form_bilingual_doc(out_path)
+
+
 
